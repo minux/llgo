@@ -24,101 +24,115 @@ package runtime
 
 import "unsafe"
 
-// This is a runtime-internal representation of runtimeType.
-// runtimeType is always proceeded by commonType.
-type type_ struct {
-	ptr unsafe.Pointer
-	typ unsafe.Pointer
-	commonType
+// These types are based on those from go/src/pkg/reflect/type.go, must
+// keep in sync!
+
+// rtype is the common implementation of most values.
+// It is embedded in other, public struct types, but always
+// with a unique tag like `reflect:"array"` or `reflect:"ptr"`
+// so that code cannot convert from, say, *arrayType to *ptrType.
+type rtype struct {
+	size          uintptr  // size in bytes
+	hash          uint32   // hash of type; avoids computation in hash tables
+	_             uint8    // unused/padding
+	align         uint8    // alignment of variable with this type
+	fieldAlign    uint8    // alignment of struct field with this type
+	kind          uint8    // enumeration for C
+	alg           *uintptr // algorithm table (../runtime/runtime.h:/Alg)
+	gc            uintptr  // garbage collection data
+	string        *string  // string form; unnecessary but undeniably useful
+	*uncommonType          // (relatively) uncommon fields
+	ptrToThis     *rtype   // type for pointer to this type, if used in binary or has methods
 }
 
-type commonType struct {
-	size       uintptr
-	hash       uint32
-	_          uint8
-	align      uint8
-	fieldAlign uint8
-	kind       uint8
-	alg        *uintptr
-	gc         unsafe.Pointer
-	string     *string
-	*uncommonType
-	ptrToThis *type_
-}
-
-type uncommonType struct {
-	name    *string
-	pkgPath *string
-	methods []method
-}
-
+// Method on non-interface type
 type method struct {
-	name    *string
-	pkgPath *string
-	mtyp    *type_
-	typ     *type_
-	ifn     unsafe.Pointer
-	tfn     unsafe.Pointer
+	name    *string        // name of method
+	pkgPath *string        // nil for exported Names; otherwise import path
+	mtyp    *rtype         // method type (without receiver)
+	typ     *rtype         // .(*FuncType) underneath (with receiver)
+	ifn     unsafe.Pointer // fn used in interface call (one-word receiver)
+	tfn     unsafe.Pointer // fn used for normal method call
 }
 
-type sliceType struct {
-	commonType
-	elem *type_
+// uncommonType is present only for types with names or methods
+// (if T is a named type, the uncommonTypes for T and *T have methods).
+// Using a pointer to this struct reduces the overall size required
+// to describe an unnamed type with no methods.
+type uncommonType struct {
+	name    *string  // name of type
+	pkgPath *string  // import path; nil for built-in types like int, string
+	methods []method // methods associated with type
 }
 
-type mapType struct {
-	commonType
-	key  *type_
-	elem *type_
-}
-
-type imethod struct {
-	name    *string
-	pkgPath *string
-	typ     *type_
-}
-
-type interfaceType struct {
-	commonType
-	methods []imethod
-}
-
-type ptrType struct {
-	commonType
-	elem *type_
-}
-
+// arrayType represents a fixed array type.
 type arrayType struct {
-	commonType
-	elem  *type_
-	slice *type_
+	rtype `reflect:"array"`
+	elem  *rtype // array element type
+	slice *rtype // slice type
 	len   uintptr
 }
 
+// chanType represents a channel type.
 type chanType struct {
-	commonType
-	elem *type_
-	dir  uintptr
+	rtype `reflect:"chan"`
+	elem  *rtype  // channel element type
+	dir   uintptr // channel direction (ChanDir)
 }
 
+// funcType represents a function type.
 type funcType struct {
-	commonType
-	dotdotdot bool
-	in        []*type_
-	out       []*type_
+	rtype     `reflect:"func"`
+	dotdotdot bool     // last input parameter is ...
+	in        []*rtype // input parameter types
+	out       []*rtype // output parameter types
 }
 
+// imethod represents a method on an interface type
+type imethod struct {
+	name    *string // name of method
+	pkgPath *string // nil for exported Names; otherwise import path
+	typ     *rtype  // .(*FuncType) underneath
+}
+
+// interfaceType represents an interface type.
+type interfaceType struct {
+	rtype   `reflect:"interface"`
+	methods []imethod // sorted by hash
+}
+
+// mapType represents a map type.
+type mapType struct {
+	rtype `reflect:"map"`
+	key   *rtype // map key type
+	elem  *rtype // map element (value) type
+}
+
+// ptrType represents a pointer type.
+type ptrType struct {
+	rtype `reflect:"ptr"`
+	elem  *rtype // pointer element (pointed at) type
+}
+
+// sliceType represents a slice type.
+type sliceType struct {
+	rtype `reflect:"slice"`
+	elem  *rtype // slice element type
+}
+
+// Struct field
 type structField struct {
-	name    *string
-	pkgPath *string
-	typ     *type_
-	tag     *string
-	offset  uintptr
+	name    *string // nil for embedded fields
+	pkgPath *string // nil for exported Names; otherwise import path
+	typ     *rtype  // type of field
+	tag     *string // nil if no tag
+	offset  uintptr // byte offset of field within struct
 }
 
+// structType represents a struct type.
 type structType struct {
-	commonType
-	fields []structField
+	rtype  `reflect:"struct"`
+	fields []structField // sorted by offset
 }
 
 const (
@@ -153,7 +167,7 @@ const (
 
 // eqtyp takes two runtime types and returns true
 // iff they are equal.
-func eqtyp(t1, t2 *type_) bool {
+func eqtyp(t1, t2 *rtype) bool {
 	if t1 == t2 {
 		return true
 	}
@@ -174,8 +188,8 @@ func eqtyp(t1, t2 *type_) bool {
 		case interfaceKind:
 		case mapKind:
 		case ptrKind:
-			t1 := (*ptrType)(unsafe.Pointer(&t1.commonType))
-			t2 := (*ptrType)(unsafe.Pointer(&t2.commonType))
+			t1 := (*ptrType)(unsafe.Pointer(t1))
+			t2 := (*ptrType)(unsafe.Pointer(t2))
 			return eqtyp(t1.elem, t2.elem)
 		case sliceKind:
 		case structKind:
