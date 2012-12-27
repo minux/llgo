@@ -157,7 +157,6 @@ func (tm *TypeMap) ToRuntime(t types.Type) llvm.Value {
 
 func (tm *TypeMap) toRuntime(t types.Type) (global, value llvm.Value) {
 	tstr := t.String()
-	//fmt.Println("toRuntime:", tstr, t)
 	info, ok := tm.types[tstr]
 	if !ok {
 		info.global, info.dyntyp = tm.makeRuntimeType(t)
@@ -166,7 +165,6 @@ func (tm *TypeMap) toRuntime(t types.Type) (global, value llvm.Value) {
 		}
 		tm.types[tstr] = info
 	}
-	//fmt.Println(info.dyntyp.Type())
 	return info.global, info.dyntyp
 }
 
@@ -459,7 +457,6 @@ func (tm *TypeMap) badRuntimeType(b *types.Bad) (global, ptr llvm.Value) {
 
 func (tm *TypeMap) basicRuntimeType(b *types.Basic) (global, ptr llvm.Value) {
 	commonType := tm.makeCommonType(b, reflect.Kind(b.Kind))
-	//fmt.Printf("BASIC(%v): %v", b.Kind, commonType.Type())
 	return tm.makeRuntimeTypeGlobal(commonType)
 }
 
@@ -481,7 +478,6 @@ func (tm *TypeMap) sliceRuntimeType(s *types.Slice) (global, ptr llvm.Value) {
 	elemRuntimeType := tm.ToRuntime(s.Elt)
 	sliceType := llvm.ConstNull(tm.runtimeSliceType)
 	sliceType = llvm.ConstInsertValue(sliceType, commonType, []uint32{0})
-	//fmt.Printf("%v\n|%v\n", tm.runtimeSliceType, elemRuntimeType.Type())
 	sliceType = llvm.ConstInsertValue(sliceType, elemRuntimeType, []uint32{1})
 	return tm.makeRuntimeTypeGlobal(sliceType)
 }
@@ -504,7 +500,6 @@ func (tm *TypeMap) pointerRuntimeType(p *types.Pointer) (global, ptr llvm.Value)
 			pkgpath = "runtime"
 		}
 		globalname = "__llgo.type.*" + n.String()
-		//fmt.Println("p: pkgpath:", pkgpath, "tm.pkgpath:", tm.pkgpath)
 		if pkgpath != tm.pkgpath {
 			global := llvm.AddGlobal(tm.module, tm.runtimeCommonType, globalname)
 			global.SetInitializer(llvm.ConstNull(tm.runtimeCommonType))
@@ -715,13 +710,11 @@ func (tm *TypeMap) uncommonType(n *types.Name, ptr bool) llvm.Value {
 
 func (tm *TypeMap) nameRuntimeType(n *types.Name) (global, ptr llvm.Value) {
 	pkgpath := n.Package
-	//fmt.Printf("%#v->", n)
 	if pkgpath == "" {
 		// Set to "runtime", so the builtin types have a home.
 		pkgpath = "runtime"
 	}
 	globalname := "__llgo.type." + n.String()
-	//fmt.Println("n: pkgpath:", pkgpath, "tm.pkgpath:", tm.pkgpath)
 	if pkgpath != tm.pkgpath {
 		// We're not compiling the package from whence the type came,
 		// so we'll just create a pointer to it here.
