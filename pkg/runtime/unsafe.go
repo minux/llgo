@@ -7,7 +7,6 @@ package runtime
 import "unsafe"
 
 // #llgo name: llvm.trap
-// #llgo attr: nounwind, noreturn
 func llvm_trap()
 
 // #llgo name: reflect.unsafe_New
